@@ -1,0 +1,201 @@
+/**
+ * PayArc for Gravity Forms - Frontend Styles
+ * Minimal styling to match Stripe and use Gravity Forms theme
+ */
+
+/* PayArc Container - Match Stripe Structure */
+.ginput_payarc_creditcard {
+    /* Let Gravity Forms handle the main styling */
+}
+
+/* PayArc Elements Styling - Match Stripe Structure */
+.PayArcElement--card {
+    border: var(--gf-ctrl-border-width, 1px) var(--gf-ctrl-border-style, solid) var(--gf-ctrl-border-color, #686868);
+    border-radius: var(--gf-ctrl-border-radius, 3px);
+    background: var(--gf-ctrl-bg-color, #fff);
+    padding: 0;
+    overflow: hidden;
+}
+
+.PayArcElement--card:hover {
+    border-color: var(--gf-ctrl-border-color-hover, #333);
+}
+
+.PayArcElement--card.payarc-focused {
+    border-color: var(--gf-ctrl-border-color-focus, #204ce5);
+    box-shadow: var(--gf-ctrl-shadow-focus, 0 0 0 1px #204ce5);
+    outline: none;
+}
+
+.PayArcElement--card.payarc-invalid {
+    border-color: var(--gf-ctrl-border-color-error, #c02b0a);
+    box-shadow: var(--gf-ctrl-shadow-error, 0 0 0 1px #c02b0a);
+}
+
+.PayArcElement--card.payarc-complete {
+    border-color: var(--gf-ctrl-border-color-success, #008a20);
+}
+
+/* PayArc Element Rows */
+.payarc-element-row {
+    display: flex;
+    min-height: 48px;
+    border-bottom: var(--gf-ctrl-border-width, 1px) var(--gf-ctrl-border-style, solid) var(--gf-ctrl-border-color, #686868);
+}
+
+.payarc-element-row:last-child {
+    border-bottom: none;
+}
+
+.payarc-element-row-split {
+    display: flex;
+}
+
+/* Individual PayArc Elements */
+.payarc-card-number-element {
+    flex: 1;
+    padding: var(--gf-ctrl-padding-vertical, 13px) var(--gf-ctrl-padding-horizontal, 16px);
+    background: var(--gf-ctrl-bg-color, #fff);
+    font-size: var(--gf-ctrl-font-size, 16px);
+    line-height: var(--gf-ctrl-line-height, 1.5);
+}
+
+.payarc-card-expiry-element,
+.payarc-card-cvc-element {
+    flex: 1;
+    padding: var(--gf-ctrl-padding-vertical, 13px) var(--gf-ctrl-padding-horizontal, 16px);
+    background: var(--gf-ctrl-bg-color, #fff);
+    font-size: var(--gf-ctrl-font-size, 16px);
+    line-height: var(--gf-ctrl-line-height, 1.5);
+}
+
+.payarc-card-expiry-element {
+    border-right: var(--gf-ctrl-border-width, 1px) var(--gf-ctrl-border-style, solid) var(--gf-ctrl-border-color, #686868);
+}
+
+/* Focus states for individual elements */
+.payarc-card-number-element.payarc-focused,
+.payarc-card-expiry-element.payarc-focused,
+.payarc-card-cvc-element.payarc-focused {
+    background: var(--gf-ctrl-bg-color-focus, #fff);
+}
+
+/* Error Messages - Match Gravity Forms validation styling */
+#payarc-card-errors-1 {
+    /* Use Gravity Forms error styling classes */
+}
+
+/* Processing State */
+.payarc-processing .PayArcElement--card {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.payarc-processing .gform_button {
+    position: relative;
+}
+
+.payarc-processing .gform_button:before {
+    content: "";
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 16px;
+    height: 16px;
+    border: 2px solid #fff;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: payarc-spin 0.8s linear infinite;
+}
+
+@keyframes payarc-spin {
+    to {
+        transform: translateY(-50%) rotate(360deg);
+    }
+}
+
+/* Form Editor Preview */
+.payarc-payment-element-placeholder {
+    background: #f9f9f9;
+    border: 2px dashed #ccc;
+    border-radius: 6px;
+    padding: 20px;
+    text-align: center;
+    color: #666;
+    direction: rtl;
+}
+
+.payarc-field-preview {
+    margin-bottom: 15px;
+}
+
+.payarc-field-preview:last-child {
+    margin-bottom: 0;
+}
+
+.payarc-field-preview label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #444;
+    font-size: 14px;
+    text-align: right;
+}
+
+.payarc-input-preview {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 12px;
+    text-align: center;
+    color: #aaa;
+    font-family: monospace;
+}
+
+.payarc-field-row {
+    display: flex;
+    gap: 15px;
+    direction: rtl;
+}
+
+.payarc-field-row .payarc-field-preview {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+/* Entry Detail Display */
+.payarc-entry-detail {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    font-size: 14px;
+    line-height: 1.6;
+    direction: rtl;
+    text-align: right;
+}
+
+/* Responsive Design */
+@media (max-width: 600px) {
+    .payarc-field-row {
+        flex-direction: column;
+        gap: 0;
+    }
+}
+
+/* Integration with Gravity Forms Themes */
+.gform_wrapper .ginput_payarc_creditcard {
+    margin-top: 0;
+}
+
+/* Gravity Forms Validation Integration */
+.gform_wrapper .gfield_error .PayArcElement--card {
+    border-color: var(--gf-ctrl-border-color-error, #c02b0a);
+}
+
+/* Accessibility Improvements */
+.PayArcElement--card:focus-within {
+    border-color: var(--gf-ctrl-border-color-focus, #204ce5);
+    box-shadow: var(--gf-ctrl-shadow-focus, 0 0 0 1px #204ce5);
+}
