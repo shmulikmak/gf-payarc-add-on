@@ -3,9 +3,105 @@
  * Minimal styling to match Stripe and use Gravity Forms theme
  */
 
-/* PayArc Container - Match Stripe Structure */
+/* PayArc Container */
 .ginput_payarc_creditcard {
     /* Let Gravity Forms handle the main styling */
+}
+
+/* PayArc Card Container */
+.payarc-card-container {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    overflow: hidden;
+}
+
+/* Field Groups */
+.payarc-field-group {
+    margin-bottom: 0;
+}
+
+.payarc-field-group label {
+    display: block;
+    margin-bottom: 5px;
+    padding: 8px 12px 0;
+    font-weight: 500;
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.payarc-field-group input {
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid #eee;
+    background: transparent;
+    padding: 8px 12px 12px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.payarc-field-group input:focus {
+    border-bottom-color: #007cba;
+}
+
+.payarc-field-group input::placeholder {
+    color: #999;
+}
+
+/* Field Row for Expiry and CVV */
+.payarc-field-row {
+    display: flex;
+}
+
+.payarc-field-row .payarc-field-group {
+    flex: 1;
+}
+
+.payarc-field-row .payarc-field-group + .payarc-field-group {
+    border-left: 1px solid #eee;
+}
+
+.payarc-field-row .payarc-field-group:last-child {
+    border-left: none;
+}
+
+/* Cardholder Name Field */
+.payarc-cardholder-name {
+    border-top: 1px solid #eee;
+}
+
+/* Card Type Styling */
+.payarc-card-number.visa { color: #1a1f71; }
+.payarc-card-number.mastercard { color: #eb001b; }
+.payarc-card-number.amex { color: #006fcf; }
+.payarc-card-number.discover { color: #ff6000; }
+
+/* Validation States */
+.payarc-field-group.payarc-invalid input {
+    border-bottom-color: #d63638;
+}
+
+.payarc-field-group.payarc-valid input {
+    border-bottom-color: #00a32a;
+}
+
+/* Error Message Container */
+.payarc-card-errors {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #fff2f2;
+    border-left: 3px solid #d63638;
+    border-radius: 0 3px 3px 0;
+    color: #d63638;
+    font-size: 13px;
+    display: none;
+}
+
+.payarc-card-errors.show {
+    display: block;
 }
 
 /* PayArc Elements Styling - Match Stripe Structure */
@@ -198,4 +294,183 @@
 .PayArcElement--card:focus-within {
     border-color: var(--gf-ctrl-border-color-focus, #204ce5);
     box-shadow: var(--gf-ctrl-shadow-focus, 0 0 0 1px #204ce5);
+}
+
+/* 3D Secure Authentication Modal */
+.payarc-3ds-modal {
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.payarc-3ds-modal-content {
+    background-color: #fff;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    animation: payarc-modal-fade-in 0.3s ease-out;
+}
+
+.payarc-3ds-header {
+    background: var(--gf-ctrl-bg-color, #f9f9f9);
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--gf-ctrl-border-color, #ddd);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.payarc-3ds-header h3 {
+    margin: 0;
+    color: var(--gf-label-color, #333);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.payarc-3ds-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--gf-label-color, #666);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.payarc-3ds-close:hover {
+    background-color: var(--gf-ctrl-border-color, #eee);
+    color: var(--gf-label-color, #333);
+}
+
+.payarc-3ds-modal iframe {
+    display: block;
+    border: none;
+    width: 100%;
+    height: 500px;
+    min-height: 400px;
+}
+
+@keyframes payarc-modal-fade-in {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-50px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Responsive adjustments for 3DS modal */
+@media (max-width: 768px) {
+    .payarc-3ds-modal-content {
+        width: 95%;
+        max-height: 95vh;
+    }
+    
+    .payarc-3ds-header {
+        padding: 12px 15px;
+    }
+    
+    .payarc-3ds-header h3 {
+        font-size: 16px;
+    }
+    
+    .payarc-3ds-modal iframe {
+        height: 450px;
+    }
+}
+
+/* Fallback Input Styling */
+.payarc-fallback-input {
+    width: 100% !important;
+    padding: 12px;
+    border: 1px solid var(--gf-ctrl-border-color, #ddd);
+    border-radius: var(--gf-ctrl-border-radius, 3px);
+    background: var(--gf-ctrl-bg-color, #fff);
+    font-size: var(--gf-ctrl-font-size, 14px);
+    line-height: 1.4;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.payarc-fallback-input:focus {
+    outline: 0;
+    border-color: var(--gf-ctrl-border-color-focus, #204ce5);
+    box-shadow: var(--gf-ctrl-shadow-focus, 0 0 0 1px #204ce5);
+}
+
+.payarc-fallback-input::placeholder {
+    color: var(--gf-ctrl-color-placeholder, #666);
+    opacity: 1;
+}
+
+/* PayArc Element Containers for Fallback */
+.payarc-element-row {
+    margin-bottom: 10px;
+}
+
+.payarc-element-row-split {
+    display: flex;
+    gap: 10px;
+}
+
+.payarc-element-row-split > div {
+    flex: 1;
+}
+
+.payarc-card-number-element,
+.payarc-card-expiry-element,
+.payarc-card-cvc-element {
+    min-height: 44px;
+}
+
+/* PayArc error messages */
+.payarc-error-message {
+    color: var(--gf-color-danger, #c02b0a);
+    font-size: 13px;
+    margin-top: 5px;
+}
+
+.payarc-success-message {
+    color: var(--gf-color-success, #008a00);
+    font-size: 13px;
+    margin-top: 5px;
+}
+
+/* Processing state */
+.payarc-processing .gform_button[type="submit"] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+[dir="rtl"] .payarc-field-row {
+    flex-direction: row-reverse;
+    text-align: right;
+}
+[dir="rtl"] .payarc-field-preview label {
+    text-align: right;
+}
+[dir="rtl"] .payarc-input-preview {
+    direction: rtl;
+}
+/* לשדות SDK */
+[dir="rtl"] .PayArcElement--card {
+    direction: rtl;
+    text-align: right;
 }

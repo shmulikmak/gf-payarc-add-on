@@ -48,8 +48,18 @@ class GFPayArc extends GFPaymentAddOn {
         // Entry info
         add_filter('gform_entry_info', array($this, 'entry_info'), 10, 2);
         
+        // Note: Manual validation bypass no longer needed - framework handles this with proper is_authorized return
+        
         // Localize scripts
         add_action('gform_enqueue_scripts', array($this, 'localize_scripts'), 10, 2);
+        
+        // Refund functionality
+        add_action('wp_ajax_gf_payarc_refund', array($this, 'ajax_refund'));
+        add_action('gform_entry_detail_sidebar_after', array($this, 'maybe_display_refund_button'), 10, 2);
+        
+        // Webhook functionality
+        add_action('wp_ajax_nopriv_gf_payarc_webhook', array($this, 'handle_webhook'));
+        add_action('wp_ajax_gf_payarc_webhook', array($this, 'handle_webhook'));
     }
     
     public function get_menu_icon() {
@@ -127,6 +137,35 @@ class GFPayArc extends GFPaymentAddOn {
                     ),
                 ),
             ),
+            array(
+                'title'  => esc_html__('הגדרות Webhook', 'gravityformspayarc'),
+                'fields' => array(
+                    array(
+                        'name'        => 'webhooks_enabled',
+                        'label'       => esc_html__('Webhooks מופעלים?', 'gravityformspayarc'),
+                        'type'        => 'checkbox',
+                        'horizontal'  => true,
+                        'choices'     => array(
+                            array(
+                                'label' => esc_html__('אפשר קבלת webhook events מ-PayArc', 'gravityformspayarc'),
+                                'name'  => 'webhooks_enabled',
+                            ),
+                        ),
+                        'description' => sprintf(
+                            esc_html__('כדי להפעיל webhooks, הוסף את ה-URL הזה בלוח הבקרה של PayArc: %s', 'gravityformspayarc'),
+                            '<br><code>' . admin_url('admin-ajax.php?action=gf_payarc_webhook') . '</code>'
+                        ),
+                    ),
+                    array(
+                        'name'          => 'webhook_secret',
+                        'label'         => esc_html__('Webhook Secret', 'gravityformspayarc'),
+                        'type'          => 'text',
+                        'class'         => 'medium',
+                        'input_type'    => 'password',
+                        'description'   => esc_html__('המפתח הסודי לאימות webhooks מ-PayArc', 'gravityformspayarc'),
+                    ),
+                ),
+            ),
         );
     }
     
@@ -184,27 +223,70 @@ class GFPayArc extends GFPaymentAddOn {
                 ),
             ),
             array(
-                'title'  => esc_html__('מידע לקוח', 'gravityformspayarc'),
+                'title'  => esc_html__('Customer Information', 'gravityformspayarc'),
                 'fields' => array(
                     array(
                         'name'       => 'customerInformation',
-                        'label'      => esc_html__('שדות לקוח', 'gravityformspayarc'),
+                        'label'      => esc_html__('Customer Fields', 'gravityformspayarc'),
                         'type'       => 'field_map',
-                        'tooltip'    => esc_html__('מפה את שדות הטופס למידע לקוח', 'gravityformspayarc'),
+                        'tooltip'    => esc_html__('Map form fields to customer information', 'gravityformspayarc'),
                         'field_map'  => array(
                             array(
                                 'name'     => 'email',
-                                'label'    => esc_html__('אימייל', 'gravityformspayarc'),
+                                'label'    => esc_html__('Email', 'gravityformspayarc'),
                                 'required' => true,
                             ),
                             array(
                                 'name'  => 'first_name',
-                                'label' => esc_html__('שם פרטי', 'gravityformspayarc'),
+                                'label' => esc_html__('First Name', 'gravityformspayarc'),
                                 'required' => false,
                             ),
                             array(
                                 'name'  => 'last_name',
-                                'label' => esc_html__('שם משפחה', 'gravityformspayarc'),
+                                'label' => esc_html__('Last Name', 'gravityformspayarc'),
+                                'required' => false,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            array(
+                'title'  => esc_html__('Billing Address', 'gravityformspayarc'),
+                'fields' => array(
+                    array(
+                        'name'       => 'billingAddress',
+                        'label'      => esc_html__('Address Fields', 'gravityformspayarc'),
+                        'type'       => 'field_map',
+                        'tooltip'    => esc_html__('Map form fields to billing address (required for address verification)', 'gravityformspayarc'),
+                        'field_map'  => array(
+                            array(
+                                'name'  => 'address_line_1',
+                                'label' => esc_html__('Address Line 1', 'gravityformspayarc'),
+                                'required' => false,
+                            ),
+                            array(
+                                'name'  => 'address_line_2',
+                                'label' => esc_html__('Address Line 2', 'gravityformspayarc'),
+                                'required' => false,
+                            ),
+                            array(
+                                'name'  => 'city',
+                                'label' => esc_html__('City', 'gravityformspayarc'),
+                                'required' => false,
+                            ),
+                            array(
+                                'name'  => 'state',
+                                'label' => esc_html__('State/Province', 'gravityformspayarc'),
+                                'required' => false,
+                            ),
+                            array(
+                                'name'  => 'zip',
+                                'label' => esc_html__('ZIP/Postal Code', 'gravityformspayarc'),
+                                'required' => false,
+                            ),
+                            array(
+                                'name'  => 'country',
+                                'label' => esc_html__('Country', 'gravityformspayarc'),
                                 'required' => false,
                             ),
                         ),
@@ -263,29 +345,23 @@ class GFPayArc extends GFPaymentAddOn {
     public function scripts() {
         $scripts = array(
             array(
-                'handle'  => 'payarc-sdk',
-                'src'     => $this->get_plugin_setting('sandbox_mode') 
-                    ? 'https://testapi.payarc.net/v1/sdk/payarc.js'
-                    : 'https://api.payarc.net/v1/sdk/payarc.js',
-                'version' => $this->_version,
-                'deps'    => array(),
-                'in_footer' => true,
-                'enqueue' => array(
-                    array(
-                        'admin_page' => array('form_settings'),
-                        'tab'        => 'payarc'
-                    ),
-                    array('field_types' => array('payarc_creditcard')),
-                )
-            ),
-            array(
                 'handle'  => 'gf-payarc-frontend',
                 'src'     => GF_PAYARC_URL . 'js/frontend.js',
                 'version' => $this->_version,
-                'deps'    => array('jquery', 'gform_conditional_logic', 'payarc-sdk'),
+                'deps'    => array('jquery', 'gform_conditional_logic'),
                 'in_footer' => true,
                 'enqueue' => array(
                     array('field_types' => array('payarc_creditcard')),
+                ),
+            ),
+            array(
+                'handle'  => 'gf-payarc-admin',
+                'src'     => GF_PAYARC_URL . 'js/admin.js',
+                'version' => $this->_version,
+                'deps'    => array('jquery'),
+                'in_footer' => true,
+                'enqueue' => array(
+                    array('admin_page' => array('entry_detail')),
                 ),
             ),
         );
@@ -301,6 +377,14 @@ class GFPayArc extends GFPaymentAddOn {
                 'version' => $this->_version,
                 'enqueue' => array(
                     array('field_types' => array('payarc_creditcard')),
+                )
+            ),
+            array(
+                'handle'  => 'gf-payarc-admin',
+                'src'     => GF_PAYARC_URL . 'css/admin.css',
+                'version' => $this->_version,
+                'enqueue' => array(
+                    array('admin_page' => array('entry_detail')),
                 )
             ),
         );
@@ -335,6 +419,9 @@ class GFPayArc extends GFPaymentAddOn {
                 'payment_error' => esc_html__('התשלום נכשל. אנא נסה שוב.', 'gravityformspayarc'),
                 'no_feed_configured' => esc_html__('PayArc לא מוגדר לטופס זה. אנא הגדר feed תשלום.', 'gravityformspayarc'),
                 'no_api_settings' => esc_html__('הגדרות PayArc API חסרות. אנא הגדר את המפתחות.', 'gravityformspayarc'),
+                'secure_authentication' => esc_html__('אימות מאובטח', 'gravityformspayarc'),
+                'authentication_failed' => esc_html__('אימות 3D Secure נכשל', 'gravityformspayarc'),
+                'authentication_timeout' => esc_html__('אימות 3D Secure פקע', 'gravityformspayarc'),
             )
         ));
     }
@@ -350,106 +437,483 @@ class GFPayArc extends GFPaymentAddOn {
         return false;
     }
     
+    /**
+     * Sanitize address field to handle Hebrew characters
+     */
+    private function sanitize_address_field($field) {
+        if (empty($field)) return '';
+        
+        // More comprehensive Hebrew to English mapping
+        $hebrew_mapping = array(
+            'ישראל' => 'Israel',
+            'תל אביב' => 'Tel Aviv',
+            'קרית מלאכי' => 'Kiryat Malakhi', 
+            'הרצליה' => 'Herzliya',
+            'פתח תקוה' => 'Petah Tikva',
+            'באר שבע' => 'Beer Sheva',
+            'חיפה' => 'Haifa',
+            'ירושלים' => 'Jerusalem',
+            'הר הזיתים' => 'Mount of Olives',
+            'התאנה' => 'Hatana',
+            'רחוב' => 'Street'
+        );
+        
+        // Apply Hebrew to English mapping
+        $field = str_replace(array_keys($hebrew_mapping), array_values($hebrew_mapping), $field);
+        
+        // Remove any remaining non-ASCII characters completely
+        $field = preg_replace('/[^\x20-\x7E]/', '', $field);
+        
+        // Clean up multiple spaces and trim
+        $field = preg_replace('/\s+/', ' ', trim($field));
+        
+        return $field;
+    }
+    
+    /**
+     * Get state code for PayArc validation
+     */
+    private function get_state_code($state, $country_code) {
+        // PayArc may require state_code to be empty for non-US countries
+        if ($country_code !== 'US') {
+            return ''; // Empty for non-US countries
+        }
+        
+        // For US states, return first 2 chars of sanitized state
+        $clean_state = $this->sanitize_address_field($state);
+        return strtoupper(substr($clean_state, 0, 2));
+    }
+    
     public function authorize($feed, $submission_data, $form, $entry) {
         // Get PayArc settings
         $api_key = $this->get_plugin_setting('api_key');
         $bearer_token = $this->get_plugin_setting('bearer_token');
         $sandbox_mode = $this->get_plugin_setting('sandbox_mode');
         
-        if (empty($api_key) || empty($bearer_token)) {
+        if (empty($bearer_token)) {
             return array(
                 'is_success' => false,
-                'error_message' => esc_html__('אישורי PayArc API לא הוגדרו', 'gravityformspayarc'),
+                'error_message' => esc_html__('PayArc API credentials not configured', 'gravityformspayarc'),
             );
         }
         
-        // Get payment token from form submission
-        $payment_token = rgpost('payarc_payment_token');
+        // Get card data from form submission
+        $card_number = rgpost('payarc_card_number');
+        $card_expiry = rgpost('payarc_card_expiry'); 
+        $card_cvc = rgpost('payarc_card_cvc');
+        $cardholder_name = '';
         
-        if (empty($payment_token)) {
-            return array(
-                'is_success' => false,
-                'error_message' => esc_html__('נדרש אסימון תשלום', 'gravityformspayarc'),
-            );
+        // Get cardholder name from the visible input field
+        foreach ($_POST as $key => $value) {
+            if (strpos($key, 'input_') === 0 && strpos($key, '.5') !== false) {
+                $cardholder_name = sanitize_text_field($value);
+                break;
+            }
         }
         
-        // Prepare payment data
-        $amount = $submission_data['payment_amount'] * 100; // Convert to cents
-        $currency = strtolower(GFCommon::get_currency());
-        
-        // PayArc API endpoint
-        $api_url = $sandbox_mode 
-            ? 'https://testapi.payarc.net/v1/charges'
-            : 'https://api.payarc.net/v1/charges';
-            
-        // Prepare API request
-        $payment_data = array(
-            'amount' => $amount,
-            'currency' => $currency,
-            'source' => $payment_token,
-            'statement_descriptor' => get_bloginfo('name'),
-            'description' => sprintf(
-                'Form %s Entry %s',
-                $form['title'],
-                $entry['id']
-            )
+        // Extract billing address from submission data if available
+        $billing_address = array(
+            'country_code' => 'IL', // Default to IL for Israeli users
+            'city' => 'Tel Aviv', // Default
+            'address_1' => 'Main St 1', // Default
+            'zip' => '12345', // Default
+            'state' => '', // Default empty for non-US
+            'state_code' => '' // PayArc now requires state_code field
         );
         
-        // Add customer info if available
-        if (!empty($submission_data['email'])) {
-            $payment_data['receipt_email'] = $submission_data['email'];
+        $this->log_debug(__METHOD__ . '(): Starting with default billing address for IL');
+        
+        // Try to get mapped address fields from the feed
+        if (!empty($feed['meta']['billingAddress_address_line_1'])) {
+            $address_1 = $this->get_field_value($form, $entry, $feed['meta']['billingAddress_address_line_1']);
+            if (!empty($address_1)) {
+                $billing_address['address_1'] = $address_1;
+            }
         }
         
-        // Make API request
-        $response = wp_remote_post($api_url, array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $bearer_token,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json'
-            ),
-            'body' => json_encode($payment_data),
-            'timeout' => 30,
-        ));
+        if (!empty($feed['meta']['billingAddress_city'])) {
+            $city = $this->get_field_value($form, $entry, $feed['meta']['billingAddress_city']);
+            if (!empty($city)) {
+                $billing_address['city'] = $city;
+            }
+        }
         
-        if (is_wp_error($response)) {
+        if (!empty($feed['meta']['billingAddress_state'])) {
+            $state = $this->get_field_value($form, $entry, $feed['meta']['billingAddress_state']);
+            if (!empty($state)) {
+                $billing_address['state'] = $state;
+                // PayArc requires state_code for validation 
+                $billing_address['state_code'] = $this->get_state_code($state, $billing_address['country_code']);
+            }
+        }
+        
+        if (!empty($feed['meta']['billingAddress_zip'])) {
+            $zip = $this->get_field_value($form, $entry, $feed['meta']['billingAddress_zip']);
+            if (!empty($zip)) {
+                $billing_address['zip'] = $zip;
+            }
+        }
+        
+        if (!empty($feed['meta']['billingAddress_country'])) {
+            $country = $this->get_field_value($form, $entry, $feed['meta']['billingAddress_country']);
+            if (!empty($country)) {
+                // Map country names to codes (including Hebrew)
+                $country_mapping = array(
+                    'Israel' => 'IL',
+                    'ישראל' => 'IL', // Hebrew for Israel
+                    'United States' => 'US',
+                    'ארצות הברית' => 'US', // Hebrew for United States
+                    'Canada' => 'CA',
+                    'קנדה' => 'CA', // Hebrew for Canada
+                    'United Kingdom' => 'GB',
+                    'בריטניה' => 'GB', // Hebrew for Britain
+                    'Germany' => 'DE',
+                    'גרמניה' => 'DE', // Hebrew for Germany
+                    'France' => 'FR',
+                    'צרפת' => 'FR', // Hebrew for France
+                    'US' => 'US', // Handle if they enter code directly
+                    'IL' => 'IL',
+                    'CA' => 'CA',
+                    'GB' => 'GB',
+                    'DE' => 'DE',
+                    'FR' => 'FR'
+                );
+                
+                $this->log_debug(__METHOD__ . '(): Raw country value from form: ' . $country);
+                
+                if (isset($country_mapping[$country])) {
+                    $billing_address['country_code'] = $country_mapping[$country];
+                    $this->log_debug(__METHOD__ . '(): Mapped country "' . $country . '" to code: ' . $billing_address['country_code']);
+                } else {
+                    // If no mapping found and it looks like a 2-letter code, use it
+                    if (strlen($country) == 2 && ctype_alpha($country)) {
+                        $billing_address['country_code'] = strtoupper($country);
+                        $this->log_debug(__METHOD__ . '(): Using country as-is (2-letter code): ' . $billing_address['country_code']);
+                    } else {
+                        // Default to IL for unmapped Hebrew/Israeli text
+                        $billing_address['country_code'] = 'IL';
+                        $this->log_debug(__METHOD__ . '(): Unknown country "' . $country . '", defaulting to IL');
+                    }
+                }
+            }
+        }
+        
+        // Ensure we always have a valid country code
+        if (empty($billing_address['country_code']) || strlen($billing_address['country_code']) != 2 || !ctype_alpha($billing_address['country_code'])) {
+            $billing_address['country_code'] = 'IL'; // Default for Israeli users
+            $this->log_debug(__METHOD__ . '(): No valid country code found, defaulting to IL');
+        }
+        
+        // Force country code to be valid ASCII letters
+        $billing_address['country_code'] = strtoupper(preg_replace('/[^A-Za-z]/', '', $billing_address['country_code']));
+        if (strlen($billing_address['country_code']) != 2) {
+            $billing_address['country_code'] = 'IL';
+        }
+        
+        // Apply sanitization to all address fields before final processing
+        $billing_address['city'] = $this->sanitize_address_field($billing_address['city']);
+        $billing_address['address_1'] = $this->sanitize_address_field($billing_address['address_1']);
+        $billing_address['state'] = $this->sanitize_address_field($billing_address['state']);
+        
+        // Ensure state_code is set - PayArc requires this field
+        if (empty($billing_address['state_code'])) {
+            $billing_address['state_code'] = $this->get_state_code($billing_address['state'], $billing_address['country_code']);
+        }
+        
+        $this->log_debug(__METHOD__ . '(): Final billing address after validation: ' . json_encode($billing_address));
+        
+        if (empty($card_number) || empty($card_expiry) || empty($card_cvc)) {
             return array(
                 'is_success' => false,
-                'error_message' => $response->get_error_message(),
+                'error_message' => esc_html__('Credit card information required', 'gravityformspayarc'),
             );
         }
         
-        $response_body = json_decode(wp_remote_retrieve_body($response), true);
-        $response_code = wp_remote_retrieve_response_code($response);
-        
-        if ($response_code === 200 && isset($response_body['data']['charge_id'])) {
-            // Payment successful
+        // Parse expiry date from MM/YY format
+        $expiry_parts = explode('/', $card_expiry);
+        if (count($expiry_parts) !== 2) {
             return array(
-                'is_success' => true,
-                'transaction_id' => $response_body['data']['charge_id'],
+                'is_success' => false,
+                'error_message' => esc_html__('Invalid expiry date format', 'gravityformspayarc'),
+            );
+        }
+        
+        $exp_month = str_pad($expiry_parts[0], 2, '0', STR_PAD_LEFT);
+        $exp_year = '20' . $expiry_parts[1];
+        
+        // Prepare payment processing
+        $amount = $submission_data['payment_amount'] * 100; // Convert to cents
+        $currency = strtoupper(GFCommon::get_currency());
+        
+        // Debug amount calculation
+        $this->log_debug(__METHOD__ . '(): Payment amount from submission: ' . $submission_data['payment_amount']);
+        $this->log_debug(__METHOD__ . '(): Amount in cents: ' . $amount);
+        $this->log_debug(__METHOD__ . '(): Currency: ' . $currency);
+        $this->log_debug(__METHOD__ . '(): Form currency setting: ' . GFCommon::get_currency());
+        
+        // Log the entire submission_data for debugging
+        $this->log_debug(__METHOD__ . '(): Full submission data: ' . json_encode($submission_data));
+        
+        $base_url = $sandbox_mode ? 'https://testapi.payarc.net/v1' : 'https://api.payarc.net/v1';
+        
+        $this->log_debug(__METHOD__ . '(): Using API URL: ' . $base_url . ' (sandbox mode: ' . ($sandbox_mode ? 'yes' : 'no') . ')');
+        
+        $headers = array(
+            'Authorization' => 'Bearer ' . $bearer_token,
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        );
+        
+        try {
+            // Step 1: Create customer - Get email from mapped field
+            $customer_email = '';
+            if (!empty($feed['meta']['customerInformation_email'])) {
+                $customer_email = $this->get_field_value($form, $entry, $feed['meta']['customerInformation_email']);
+            }
+            
+            // Fallback to submission data email
+            if (empty($customer_email) && !empty($submission_data['email'])) {
+                $customer_email = $submission_data['email'];
+            }
+            
+            // Final fallback
+            if (empty($customer_email)) {
+                $customer_email = 'customer@example.com';
+            }
+            
+            $this->log_debug(__METHOD__ . '(): Customer email: ' . $customer_email);
+            
+            $customer_data = array(
+                'email' => $customer_email
+            );
+            
+            // Add name only if provided
+            if (!empty($cardholder_name)) {
+                $customer_data['name'] = $cardholder_name;
+            }
+            
+            // Log the request for debugging
+            $this->log_debug(__METHOD__ . '(): Creating customer with data: ' . json_encode($customer_data));
+            $this->log_debug(__METHOD__ . '(): API URL: ' . $base_url . '/customers');
+            
+            $customer_response = wp_remote_post($base_url . '/customers', array(
+                'headers' => $headers,
+                'body' => json_encode($customer_data),
+                'timeout' => 30,
+            ));
+            
+            $customer_response_code = wp_remote_retrieve_response_code($customer_response);
+            $customer_response_body = wp_remote_retrieve_body($customer_response);
+            
+            // Log the response for debugging
+            $this->log_debug(__METHOD__ . '(): Customer creation response code: ' . $customer_response_code);
+            $this->log_debug(__METHOD__ . '(): Customer creation response body: ' . $customer_response_body);
+            
+            if (is_wp_error($customer_response)) {
+                throw new Exception('Customer creation failed: ' . $customer_response->get_error_message());
+            }
+            
+            $customer_body = json_decode($customer_response_body, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Customer creation failed: Invalid JSON response');
+            }
+            
+            if ($customer_response_code !== 200 && $customer_response_code !== 201) {
+                $error_msg = isset($customer_body['message']) ? $customer_body['message'] : 'Unknown error';
+                throw new Exception('Customer creation failed: ' . $error_msg . ' (Code: ' . $customer_response_code . ')');
+            }
+            
+            // PayArc returns customer_id, not id
+            if (!isset($customer_body['data']['customer_id'])) {
+                throw new Exception('Customer creation failed: No customer ID returned');
+            }
+            
+            $customer_id = $customer_body['data']['customer_id'];
+            $this->log_debug(__METHOD__ . '(): Customer created successfully with ID: ' . $customer_id);
+            
+            // Step 2: Create token - following working WooCommerce plugin approach
+            
+            // Address fields are already sanitized above, so use them directly
+            $clean_cardholder_name = !empty($cardholder_name) ? substr($this->sanitize_address_field($cardholder_name), 0, 30) : '';
+            
+            $token_data = array(
+                'card_source' => 'INTERNET',
+                'card_number' => str_replace(' ', '', $card_number),
+                'exp_month' => $exp_month,
+                'exp_year' => $exp_year,
+                'cvv' => $card_cvc,
+                'card_holder_name' => $clean_cardholder_name,
+                'country' => $billing_address['country_code'],
+                'city' => $billing_address['city'], // Already sanitized above
+                'address_line1' => $billing_address['address_1'], // PayArc expects 'address_line1' not 'address1'
+                'zip' => $billing_address['zip'],
+                'state' => $billing_address['state'], // Already sanitized above
+                'state_code' => $billing_address['state_code'], // Empty for non-US countries
+                'authorize_card' => 0
+            );
+            
+            // Don't filter out empty values for required fields like state_code
+            // PayArc may expect empty string for non-US state_code, not null
+            foreach ($token_data as $key => $value) {
+                if ($value === null) {
+                    $token_data[$key] = '';
+                }
+            }
+            
+            // Debug the variables before creating token data
+            $this->log_debug(__METHOD__ . '(): Card number length: ' . strlen(str_replace(' ', '', $card_number)));
+            $this->log_debug(__METHOD__ . '(): Exp month: ' . $exp_month . ', Exp year: ' . $exp_year);
+            $this->log_debug(__METHOD__ . '(): Card CVC: ' . (empty($card_cvc) ? 'EMPTY' : 'SET'));
+            
+            $this->log_debug(__METHOD__ . '(): Creating token with data: ' . json_encode(array_merge($token_data, array('card_number' => '****' . substr($card_number, -4), 'cvv' => '***'))));
+            
+            // Use WooCommerce plugin approach: form-data with specific content-type
+            $token_headers = array(
+                'Authorization' => 'Bearer ' . $bearer_token,
+                'Accept' => 'application/json',
+                'Content-Type' => 'application/x-www-form-urlencoded' // Key difference - match WC plugin
+            );
+            
+            $token_response = wp_remote_post($base_url . '/tokens', array(
+                'headers' => $token_headers,
+                'body' => $token_data, // WordPress will encode this as form data
+                'timeout' => 30,
+            ));
+            
+            $token_response_code = wp_remote_retrieve_response_code($token_response);
+            $token_response_body = wp_remote_retrieve_body($token_response);
+            
+            $this->log_debug(__METHOD__ . '(): Token creation response code: ' . $token_response_code);
+            $this->log_debug(__METHOD__ . '(): Token creation response body: ' . $token_response_body);
+            
+            if (is_wp_error($token_response)) {
+                throw new Exception('Token creation failed: ' . $token_response->get_error_message());
+            }
+            
+            $token_body = json_decode($token_response_body, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Token creation failed: Invalid JSON response');
+            }
+            
+            if ($token_response_code !== 200 && $token_response_code !== 201) {
+                $error_msg = isset($token_body['message']) ? $token_body['message'] : 'Unknown error';
+                throw new Exception('Token creation failed: ' . $error_msg . ' (Code: ' . $token_response_code . ')');
+            }
+            
+            // Check for both possible token ID field names
+            if (isset($token_body['data']['id'])) {
+                $token_id = $token_body['data']['id'];
+            } elseif (isset($token_body['data']['token_id'])) {
+                $token_id = $token_body['data']['token_id'];
+            } else {
+                $this->log_debug(__METHOD__ . '(): Token response structure: ' . json_encode($token_body));
+                throw new Exception('Token creation failed: No token ID returned');
+            }
+            $this->log_debug(__METHOD__ . '(): Token created successfully with ID: ' . $token_id);
+            
+            // Step 3: Assign card to customer for dashboard access
+            $this->log_debug(__METHOD__ . '(): Assigning card to customer for dashboard visibility');
+            $assign_response = wp_remote_request($base_url . '/customers/' . $customer_id, array(
+                'method' => 'PATCH',
+                'headers' => $token_headers,
+                'body' => array('source' => $token_id),
+                'timeout' => 30,
+            ));
+            
+            $assign_response_code = wp_remote_retrieve_response_code($assign_response);
+            $this->log_debug(__METHOD__ . '(): Card assignment response code: ' . $assign_response_code);
+            
+            if (!is_wp_error($assign_response) && ($assign_response_code === 200 || $assign_response_code === 201)) {
+                $this->log_debug(__METHOD__ . '(): Card successfully assigned to customer for dashboard access');
+            } else {
+                $this->log_debug(__METHOD__ . '(): Card assignment failed, but proceeding with charge');
+            }
+            
+            // Step 4: Create charge directly with token
+            $this->log_debug(__METHOD__ . '(): Creating charge with token: ' . $token_id);
+            // Build charge data with token_id instead of customer_id + card_id
+            $charge_data = array(
+                'amount' => (int)$amount, // Amount already in cents from line 643
+                'currency' => strtolower($currency),
+                'token_id' => $token_id, // Use one-time token directly  
+                'email' => $customer_email,
+                'capture' => 1, // Capture immediately
+                'description' => sprintf('Form %s Entry %s', $form['title'], $entry['id']),
+            );
+            
+            // Add customer name if available (helps with fraud detection)
+            if (!empty($cardholder_name)) {
+                $charge_data['customer_name'] = $cardholder_name;
+            }
+            
+            $this->log_debug(__METHOD__ . '(): Creating charge with data: ' . json_encode($charge_data));
+            
+            $charge_response = wp_remote_post($base_url . '/charges', array(
+                'headers' => $token_headers, // Use same headers as token creation
+                'body' => $charge_data, // WordPress will encode as form data
+                'timeout' => 30,
+            ));
+            
+            $charge_response_code = wp_remote_retrieve_response_code($charge_response);
+            $charge_response_body = wp_remote_retrieve_body($charge_response);
+            
+            $this->log_debug(__METHOD__ . '(): Charge creation response code: ' . $charge_response_code);
+            $this->log_debug(__METHOD__ . '(): Charge creation response body: ' . $charge_response_body);
+            
+            if (is_wp_error($charge_response)) {
+                throw new Exception('Charge creation failed: ' . $charge_response->get_error_message());
+            }
+            
+            $charge_body = json_decode($charge_response_body, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Charge creation failed: Invalid JSON response');
+            }
+            
+            if ($charge_response_code !== 200 && $charge_response_code !== 201) {
+                $error_msg = isset($charge_body['message']) ? $charge_body['message'] : 'Unknown error';
+                throw new Exception('Charge creation failed: ' . $error_msg . ' (Code: ' . $charge_response_code . ')');
+            }
+            
+            // Check for charge ID in different possible field names
+            if (isset($charge_body['data']['id'])) {
+                $charge_id = $charge_body['data']['id'];
+            } elseif (isset($charge_body['data']['charge_id'])) {
+                $charge_id = $charge_body['data']['charge_id'];
+            } else {
+                $this->log_debug(__METHOD__ . '(): Charge response structure: ' . json_encode($charge_body));
+                throw new Exception('Charge creation failed: No charge ID returned');
+            }
+            
+            $this->log_debug(__METHOD__ . '(): Charge created successfully with ID: ' . $charge_id);
+            
+            // Payment processed successfully - framework will handle form submission
+            
+            // Payment successful (already captured since we set capture: 1)
+            // Return structure expected by GFPaymentAddOn framework
+            return array(
+                'is_authorized' => true,
+                'transaction_id' => $charge_id,
                 'transaction_type' => 'payment',
                 'payment_status' => 'Paid',
                 'amount' => $submission_data['payment_amount'],
                 'payment_date' => gmdate('Y-m-d H:i:s'),
                 'payment_method' => 'PayArc',
             );
-        } else {
-            // Payment failed
-            $error_message = isset($response_body['message']) 
-                ? $response_body['message'] 
-                : esc_html__('התשלום נכשל', 'gravityformspayarc');
-                
+            
+        } catch (Exception $e) {
             return array(
-                'is_success' => false,
-                'error_message' => $error_message,
+                'is_authorized' => false,
+                'error_message' => 'Payment processing failed: ' . $e->getMessage(),
             );
         }
     }
     
+    // Manual validation bypass methods removed - framework handles this automatically with correct is_authorized return
+    
     public function entry_info($form_id, $entry) {
-        if (!$this->payment_details_editing_disabled($entry, 'edit')) {
-            return '';
-        }
-
         $payment_status = rgar($entry, 'payment_status');
         $transaction_id = rgar($entry, 'transaction_id');
         $payment_amount = rgar($entry, 'payment_amount');
@@ -498,6 +962,432 @@ class GFPayArc extends GFPaymentAddOn {
         
         return $fields;
     }
+    
+    /**
+     * Refund a payment via AJAX.
+     *
+     * @since 1.0
+     */
+    public function ajax_refund() {
+        check_ajax_referer('gf_payarc_refund', 'nonce');
+
+        // Check user permissions
+        if (!current_user_can('gravityforms_payarc') && !current_user_can('gform_full_access')) {
+            wp_send_json_error(array('message' => __('אין לך הרשאה לבצע פעולה זו.', 'gravityformspayarc')));
+        }
+
+        $transaction_id = sanitize_text_field(wp_unslash(empty($_POST['transaction_id']) ? '' : $_POST['transaction_id']));
+        $entry_id = sanitize_text_field(wp_unslash(empty($_POST['entry_id']) ? '' : $_POST['entry_id']));
+
+        // Validate transaction ID format
+        if (empty($transaction_id) || !preg_match('/^[a-zA-Z0-9_-]+$/', $transaction_id)) {
+            wp_send_json_error(array('message' => __('מזהה עסקה לא תקין.', 'gravityformspayarc')));
+        }
+
+        // Validate entry ID
+        if (empty($entry_id) || !is_numeric($entry_id)) {
+            wp_send_json_error(array('message' => __('מזהה רשומה לא תקין.', 'gravityformspayarc')));
+        }
+
+        // Make sure we have the right entry.
+        $entry = GFAPI::get_entry($entry_id);
+        if (is_wp_error($entry)) {
+            wp_send_json_error(array('message' => __('לא ניתן למצוא רשומה.', 'gravityformspayarc')));
+        }
+
+        // Make sure we have a payment feed.
+        $form = GFAPI::get_form($entry['form_id']);
+        $feed = $this->get_payment_feed($entry, $form);
+        if (is_wp_error($feed)) {
+            wp_send_json_error(array('message' => __('לא ניתן למצוא feed תשלום.', 'gravityformspayarc')));
+        }
+
+        // Get PayArc settings
+        $api_key = $this->get_plugin_setting('api_key');
+        $bearer_token = $this->get_plugin_setting('bearer_token');
+        $sandbox_mode = $this->get_plugin_setting('sandbox_mode');
+
+        if (empty($api_key) || empty($bearer_token)) {
+            wp_send_json_error(array('message' => __('אישורי PayArc API לא הוגדרו.', 'gravityformspayarc')));
+        }
+
+        // PayArc API endpoint for refunds
+        $api_url = $sandbox_mode 
+            ? 'https://testapi.payarc.net/v1/charges/' . $transaction_id . '/refunds'
+            : 'https://api.payarc.net/v1/charges/' . $transaction_id . '/refunds';
+
+        // Prepare refund request
+        $refund_data = array(
+            'reason' => 'requested_by_customer'
+        );
+
+        $headers = array(
+            'Authorization' => 'Bearer ' . $bearer_token,
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        );
+
+        // Send refund request to PayArc
+        $this->log_debug(__METHOD__ . sprintf('(): Processing refund for transaction %s for entry #%d.', $transaction_id, $entry['id']));
+        $this->log_debug(__METHOD__ . sprintf('(): API URL: %s', $api_url));
+        $this->log_debug(__METHOD__ . sprintf('(): Request data: %s', json_encode($refund_data)));
+        
+        $response = wp_remote_post($api_url, array(
+            'method' => 'POST',
+            'headers' => $headers,
+            'body' => json_encode($refund_data),
+            'timeout' => 45,
+            'sslverify' => !$sandbox_mode, // Skip SSL verification in sandbox
+        ));
+
+        if (is_wp_error($response)) {
+            $this->log_error(__METHOD__ . '(): Unable to refund payment; ' . $response->get_error_message());
+            wp_send_json_error(array('message' => __('שגיאה בחיבור ל-PayArc API.', 'gravityformspayarc')));
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $refund_response = json_decode($body, true);
+        $response_code = wp_remote_retrieve_response_code($response);
+
+        // Validate JSON decode
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->log_error(__METHOD__ . '(): Invalid JSON response from PayArc API');
+            wp_send_json_error(array('message' => __('תגובה לא תקינה מ-PayArc API.', 'gravityformspayarc')));
+        }
+
+        // Log response for debugging
+        $this->log_debug(__METHOD__ . sprintf('(): Response code: %d', $response_code));
+        $this->log_debug(__METHOD__ . sprintf('(): Response body: %s', $body));
+        
+        if ($response_code !== 200 && $response_code !== 201) {
+            $error_message = isset($refund_response['message']) ? $refund_response['message'] : __('החזר תשלום נכשל.', 'gravityformspayarc');
+            $this->log_error(__METHOD__ . sprintf('(): Refund failed with code %d; %s', $response_code, $error_message));
+            wp_send_json_error(array('message' => $error_message));
+        }
+
+        // Update entry payment status (preserve original payment_date)
+        $entry['payment_status'] = 'Refunded';
+        // Don't overwrite payment_date - that's the original payment date
+        // The refund date will be recorded in the note
+        
+        // Add note about refund with timestamp
+        $refund_note = sprintf(
+            __('Payment has been refunded via PayArc on %s. Refund ID: %s', 'gravityformspayarc'),
+            gmdate('Y-m-d H:i:s'),
+            isset($refund_response['data']['id']) ? $refund_response['data']['id'] : 'N/A'
+        );
+        RGFormsModel::add_note($entry['id'], 0, __('PayArc', 'gravityformspayarc'), $refund_note, 'success');
+
+        // Update entry
+        GFAPI::update_entry($entry);
+
+        $this->log_debug(__METHOD__ . sprintf('(): Refund successful for transaction %s.', $transaction_id));
+        
+        wp_send_json_success(array(
+            'message' => __('התשלום הוחזר בהצלחה.', 'gravityformspayarc'),
+            'refund_id' => isset($refund_response['data']['id']) ? $refund_response['data']['id'] : null
+        ));
+    }
+
+    /**
+     * Display refund button on entry detail page if applicable.
+     *
+     * @since 1.0
+     */
+    public function maybe_display_refund_button($form, $entry) {
+        // Only show refund button for paid PayArc transactions
+        if ($entry['payment_status'] !== 'Paid' || !$this->is_payment_gateway($entry['id']) || empty($entry['transaction_id'])) {
+            return;
+        }
+
+        // Verify user has permission to refund
+        if (!current_user_can('gravityforms_payarc') && !current_user_can('gform_full_access')) {
+            return;
+        }
+
+        // Enqueue admin script and styles for refund functionality
+        wp_enqueue_script('gf-payarc-admin');
+        wp_enqueue_style('gf-payarc-admin');
+        wp_localize_script('gf-payarc-admin', 'gfPayArcAdminVars', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('gf_payarc_refund'),
+            'strings' => array(
+                'confirm_refund' => __('האם אתה בטוח שברצונך להחזיר תשלום זה? פעולה זו אינה ניתנת לביטול.', 'gravityformspayarc'),
+                'unexpected_error' => __('שגיאה לא צפויה אירעה.', 'gravityformspayarc')
+            )
+        ));
+        
+        ?>
+        <div id="payarc-refund-container" style="margin-top: 15px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd;">
+            <h4 style="margin-top: 0;"><?php esc_html_e('פעולות PayArc', 'gravityformspayarc'); ?></h4>
+            <button type="button" id="payarc-refund-button" class="button button-secondary" data-entry-id="<?php echo esc_attr($entry['id']); ?>" data-transaction-id="<?php echo esc_attr($entry['transaction_id']); ?>">
+                <span class="dashicons dashicons-undo" style="margin-top: 3px;"></span>
+                <?php esc_html_e('החזר תשלום', 'gravityformspayarc'); ?>
+            </button>
+            <div id="payarc-refund-spinner" class="spinner" style="display: none; float: none; margin: 5px 10px 0 0;"></div>
+            <div id="payarc-refund-message" style="margin-top: 10px;"></div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Handle PayArc webhooks.
+     *
+     * @since 1.0
+     */
+    public function handle_webhook() {
+        // Check if webhooks are enabled
+        if (!$this->get_plugin_setting('webhooks_enabled')) {
+            $this->log_debug(__METHOD__ . '(): Webhooks are disabled');
+            status_header(404);
+            die();
+        }
+
+        // Get webhook payload
+        $payload = file_get_contents('php://input');
+        if (empty($payload)) {
+            $this->log_error(__METHOD__ . '(): Empty webhook payload received');
+            status_header(400);
+            die('Empty payload');
+        }
+
+        // Parse JSON payload
+        $event = json_decode($payload, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->log_error(__METHOD__ . '(): Invalid JSON in webhook payload');
+            status_header(400);
+            die('Invalid JSON');
+        }
+
+        // Verify webhook signature (if secret is configured)
+        $webhook_secret = $this->get_plugin_setting('webhook_secret');
+        if (!empty($webhook_secret)) {
+            if (!$this->verify_webhook_signature($payload, $webhook_secret)) {
+                $this->log_error(__METHOD__ . '(): Webhook signature verification failed');
+                status_header(401);
+                die('Signature verification failed');
+            }
+        }
+
+        // Log the webhook event
+        $event_type = isset($event['type']) ? $event['type'] : 'unknown';
+        $this->log_debug(__METHOD__ . sprintf('(): Processing webhook event: %s', $event_type));
+        $this->log_debug(__METHOD__ . sprintf('(): Webhook payload: %s', $payload));
+
+        // Process the webhook event
+        try {
+            $this->process_webhook_event($event);
+            status_header(200);
+            die('OK');
+        } catch (Exception $e) {
+            $this->log_error(__METHOD__ . '(): Error processing webhook: ' . $e->getMessage());
+            status_header(500);
+            die('Processing error');
+        }
+    }
+
+    /**
+     * Verify webhook signature.
+     *
+     * @since 1.0
+     * @param string $payload Raw webhook payload.
+     * @param string $secret Webhook secret key.
+     * @return bool Whether the signature is valid.
+     */
+    private function verify_webhook_signature($payload, $secret) {
+        $signature_header = $_SERVER['HTTP_PAYARC_SIGNATURE'] ?? $_SERVER['HTTP_X_PAYARC_SIGNATURE'] ?? '';
+        
+        if (empty($signature_header)) {
+            return false;
+        }
+
+        // PayArc typically uses HMAC-SHA256 for webhook signatures
+        $expected_signature = hash_hmac('sha256', $payload, $secret);
+        
+        // Remove any prefix (like "sha256=") from the signature header
+        $received_signature = str_replace('sha256=', '', $signature_header);
+        
+        return hash_equals($expected_signature, $received_signature);
+    }
+
+    /**
+     * Process different types of webhook events.
+     *
+     * @since 1.0
+     * @param array $event Webhook event data.
+     */
+    private function process_webhook_event($event) {
+        $event_type = isset($event['type']) ? $event['type'] : '';
+        $event_data = isset($event['data']) ? $event['data'] : array();
+
+        switch ($event_type) {
+            case 'charge.succeeded':
+                $this->handle_payment_succeeded($event_data);
+                break;
+                
+            case 'charge.failed':
+                $this->handle_payment_failed($event_data);
+                break;
+                
+            case 'charge.refunded':
+                $this->handle_payment_refunded($event_data);
+                break;
+                
+            case 'charge.disputed':
+                $this->handle_payment_disputed($event_data);
+                break;
+                
+            default:
+                $this->log_debug(__METHOD__ . sprintf('(): Unhandled webhook event type: %s', $event_type));
+                break;
+        }
+    }
+
+    /**
+     * Handle successful payment webhook.
+     *
+     * @since 1.0
+     * @param array $data Event data.
+     */
+    private function handle_payment_succeeded($data) {
+        $transaction_id = isset($data['id']) ? $data['id'] : '';
+        if (empty($transaction_id)) {
+            return;
+        }
+
+        // Find entry by transaction ID
+        $entry = $this->get_entry_by_transaction_id($transaction_id);
+        if (!$entry) {
+            $this->log_debug(__METHOD__ . sprintf('(): No entry found for transaction ID: %s', $transaction_id));
+            return;
+        }
+
+        // Update entry if payment status needs to change
+        if ($entry['payment_status'] !== 'Paid') {
+            $entry['payment_status'] = 'Paid';
+            $entry['payment_date'] = gmdate('Y-m-d H:i:s');
+            GFAPI::update_entry($entry);
+
+            // Add note
+            $note = sprintf(__('Payment confirmed via PayArc webhook. Transaction ID: %s', 'gravityformspayarc'), $transaction_id);
+            RGFormsModel::add_note($entry['id'], 0, __('PayArc', 'gravityformspayarc'), $note, 'success');
+
+            $this->log_debug(__METHOD__ . sprintf('(): Updated entry #%d to Paid status', $entry['id']));
+        }
+    }
+
+    /**
+     * Handle failed payment webhook.
+     *
+     * @since 1.0
+     * @param array $data Event data.
+     */
+    private function handle_payment_failed($data) {
+        $transaction_id = isset($data['id']) ? $data['id'] : '';
+        if (empty($transaction_id)) {
+            return;
+        }
+
+        // Find entry by transaction ID
+        $entry = $this->get_entry_by_transaction_id($transaction_id);
+        if (!$entry) {
+            $this->log_debug(__METHOD__ . sprintf('(): No entry found for transaction ID: %s', $transaction_id));
+            return;
+        }
+
+        // Update entry payment status
+        $entry['payment_status'] = 'Failed';
+        GFAPI::update_entry($entry);
+
+        // Add note with failure reason
+        $failure_reason = isset($data['failure_reason']) ? $data['failure_reason'] : 'Unknown';
+        $note = sprintf(__('Payment failed via PayArc webhook. Reason: %s. Transaction ID: %s', 'gravityformspayarc'), $failure_reason, $transaction_id);
+        RGFormsModel::add_note($entry['id'], 0, __('PayArc', 'gravityformspayarc'), $note, 'error');
+
+        $this->log_debug(__METHOD__ . sprintf('(): Updated entry #%d to Failed status', $entry['id']));
+    }
+
+    /**
+     * Handle refunded payment webhook.
+     *
+     * @since 1.0
+     * @param array $data Event data.
+     */
+    private function handle_payment_refunded($data) {
+        $transaction_id = isset($data['charge_id']) ? $data['charge_id'] : (isset($data['id']) ? $data['id'] : '');
+        if (empty($transaction_id)) {
+            return;
+        }
+
+        // Find entry by transaction ID
+        $entry = $this->get_entry_by_transaction_id($transaction_id);
+        if (!$entry) {
+            $this->log_debug(__METHOD__ . sprintf('(): No entry found for transaction ID: %s', $transaction_id));
+            return;
+        }
+
+        // Update entry payment status
+        $entry['payment_status'] = 'Refunded';
+        GFAPI::update_entry($entry);
+
+        // Add note
+        $refund_id = isset($data['refund_id']) ? $data['refund_id'] : 'N/A';
+        $note = sprintf(__('Payment refunded via PayArc webhook. Refund ID: %s', 'gravityformspayarc'), $refund_id);
+        RGFormsModel::add_note($entry['id'], 0, __('PayArc', 'gravityformspayarc'), $note, 'success');
+
+        $this->log_debug(__METHOD__ . sprintf('(): Updated entry #%d to Refunded status', $entry['id']));
+    }
+
+    /**
+     * Handle disputed payment webhook.
+     *
+     * @since 1.0
+     * @param array $data Event data.
+     */
+    private function handle_payment_disputed($data) {
+        $transaction_id = isset($data['charge_id']) ? $data['charge_id'] : (isset($data['id']) ? $data['id'] : '');
+        if (empty($transaction_id)) {
+            return;
+        }
+
+        // Find entry by transaction ID
+        $entry = $this->get_entry_by_transaction_id($transaction_id);
+        if (!$entry) {
+            $this->log_debug(__METHOD__ . sprintf('(): No entry found for transaction ID: %s', $transaction_id));
+            return;
+        }
+
+        // Add note about dispute
+        $dispute_reason = isset($data['reason']) ? $data['reason'] : 'Unknown';
+        $note = sprintf(__('Payment disputed via PayArc webhook. Reason: %s. Transaction ID: %s', 'gravityformspayarc'), $dispute_reason, $transaction_id);
+        RGFormsModel::add_note($entry['id'], 0, __('PayArc', 'gravityformspayarc'), $note, 'error');
+
+        $this->log_debug(__METHOD__ . sprintf('(): Added dispute note to entry #%d', $entry['id']));
+    }
+
+    /**
+     * Find entry by transaction ID.
+     *
+     * @since 1.0
+     * @param string $transaction_id Transaction ID to search for.
+     * @return array|false Entry array or false if not found.
+     */
+    public function get_entry_by_transaction_id($transaction_id) {
+        global $wpdb;
+
+        $entry_id = $wpdb->get_var($wpdb->prepare(
+            "SELECT lead_id FROM {$wpdb->prefix}rg_lead_detail 
+             WHERE field_number = 'transaction_id' AND value = %s",
+            $transaction_id
+        ));
+
+        if ($entry_id) {
+            return GFAPI::get_entry($entry_id);
+        }
+
+        return false;
+    }
+
     
     public function uninstall() {
         delete_option('gf_payarc_sandbox_mode');

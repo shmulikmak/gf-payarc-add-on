@@ -22,6 +22,16 @@ class GF_Field_PayArc_CreditCard extends GF_Field {
     public $type = 'payarc_creditcard';
     
     /**
+     * Debug logging helper
+     */
+    private function log_debug($message) {
+        if (class_exists('GFLogging')) {
+            GFLogging::include_logger();
+            GFLogging::log_message('payarc', $message, KLogger::DEBUG);
+        }
+    }
+    
+    /**
      * Get field button title
      */
     public function get_form_editor_field_title() {
@@ -190,58 +200,63 @@ class GF_Field_PayArc_CreditCard extends GF_Field {
             $cardholder_name = esc_attr(rgget($this->id . '.5', $value));
         }
         
-        // Frontend form display matching Stripe structure exactly
-        $html = "<div class='ginput_complex ginput_container ginput_container_creditcard ginput_payarc_creditcard gform-grid-row' id='{$field_id}'>";
+        // Clean, simple credit card form
+        $html = "<div class='ginput_complex ginput_container ginput_container_creditcard ginput_payarc_creditcard' id='{$field_id}'>";
+        
+        // Main card details section
+        $html .= "<div class='ginput_full' id='{$field_id}_1_container'>";
         
         if ($is_sub_label_above) {
-            $html .= "<div class='ginput_full gform-grid-col' id='{$field_id}_1_container'>";
             $html .= "<label for='{$field_id}_1' id='{$field_id}_1_label'{$sub_label_class_attribute}>" . $card_details_sub_label . "</label>";
-            $html .= "<div id='{$field_id}_1' class='gform-theme-field-control PayArcElement--card'>";
-            
-            // PayArc element containers - this is where PayArc will mount its iframe elements
-            $html .= "<div class='payarc-element-row'>";
-            $html .= "<div id='payarc-card-number-{$form_id}' class='payarc-card-number-element'></div>";
-            $html .= "</div>";
-            $html .= "<div class='payarc-element-row payarc-element-row-split'>";
-            $html .= "<div id='payarc-card-expiry-{$form_id}' class='payarc-card-expiry-element'></div>";
-            $html .= "<div id='payarc-card-cvc-{$form_id}' class='payarc-card-cvc-element'></div>";
-            $html .= "</div>";
-            
-            $html .= "</div>";
-            $html .= "</div>";
-            
-            if (!$hide_cardholder_name) {
-                $html .= "<div class='ginput_full gform-grid-col' id='{$field_id}_5_container'>";
-                $html .= "<label for='{$field_id}_5' id='{$field_id}_5_label'{$sub_label_class_attribute}>" . $cardholder_name_sub_label . "</label>";
-                $html .= "<input type='text' name='input_{$id}.5' id='{$field_id}_5' class='gform-theme-field-control' value='{$cardholder_name}'{$cardholder_name_placeholder}>";
-                $html .= "</div>";
-            }
-        } else {
-            $html .= "<div class='ginput_full gform-grid-col' id='{$field_id}_1_container'>";
-            $html .= "<div id='{$field_id}_1' class='gform-theme-field-control PayArcElement--card'>";
-            
-            // PayArc element containers - this is where PayArc will mount its iframe elements
-            $html .= "<div class='payarc-element-row'>";
-            $html .= "<div id='payarc-card-number-{$form_id}' class='payarc-card-number-element'></div>";
-            $html .= "</div>";
-            $html .= "<div class='payarc-element-row payarc-element-row-split'>";
-            $html .= "<div id='payarc-card-expiry-{$form_id}' class='payarc-card-expiry-element'></div>";
-            $html .= "<div id='payarc-card-cvc-{$form_id}' class='payarc-card-cvc-element'></div>";
-            $html .= "</div>";
-            
-            $html .= "</div>";
-            if (!$hide_cardholder_name) {
-                $html .= "<label for='{$field_id}_1' id='{$field_id}_1_label'{$sub_label_class_attribute}>" . $card_details_sub_label . "</label>";
-            }
-            $html .= "</div>";
-            
-            if (!$hide_cardholder_name) {
-                $html .= "<div class='ginput_full gform-grid-col' id='{$field_id}_5_container'>";
-                $html .= "<input type='text' name='input_{$id}.5' id='{$field_id}_5' class='gform-theme-field-control' value='{$cardholder_name}'{$cardholder_name_placeholder}>";
-                $html .= "<label for='{$field_id}_5' id='{$field_id}_5_label'{$sub_label_class_attribute}>" . $cardholder_name_sub_label . "</label>";
-                $html .= "</div>";
-            }
         }
+        
+        $html .= "<div id='{$field_id}_1' class='payarc-card-container'>";
+        
+        // Card Number Field
+        $html .= "<div class='payarc-field-group'>";
+        $html .= "<label for='payarc-card-number-{$form_id}' class='gform-field-label'>Card Number</label>";
+        $html .= "<input type='text' id='payarc-card-number-{$form_id}' name='payarc_card_number' ";
+        $html .= "placeholder='1234 5678 9012 3456' maxlength='19' ";
+        $html .= "class='gform-theme-field-control payarc-card-field payarc-card-number' ";
+        $html .= "style='direction: ltr; text-align: left;' ";
+        $html .= "autocomplete='cc-number' required>";
+        $html .= "</div>";
+        
+        // Expiry and CVV Row
+        $html .= "<div class='payarc-field-row'>";
+        
+        $html .= "<div class='payarc-field-group payarc-expiry'>";
+        $html .= "<label for='payarc-card-expiry-{$form_id}' class='gform-field-label'>Expiry Date</label>";
+        $html .= "<input type='text' id='payarc-card-expiry-{$form_id}' name='payarc_card_expiry' ";
+        $html .= "placeholder='MM/YY' maxlength='5' ";
+        $html .= "class='gform-theme-field-control payarc-card-field payarc-card-expiry' ";
+        $html .= "style='direction: ltr; text-align: left;' ";
+        $html .= "autocomplete='cc-exp' required>";
+        $html .= "</div>";
+        
+        $html .= "<div class='payarc-field-group payarc-cvv'>";
+        $html .= "<label for='payarc-card-cvc-{$form_id}' class='gform-field-label'>CVV</label>";
+        $html .= "<input type='text' id='payarc-card-cvc-{$form_id}' name='payarc_card_cvc' ";
+        $html .= "placeholder='123' maxlength='4' ";
+        $html .= "class='gform-theme-field-control payarc-card-field payarc-card-cvc' ";
+        $html .= "style='direction: ltr; text-align: left;' ";
+        $html .= "autocomplete='cc-csc' required>";
+        $html .= "</div>";
+        
+        $html .= "</div>";
+        
+        // Cardholder name field inside the card container
+        if (!$hide_cardholder_name) {
+            $html .= "<div class='payarc-field-group payarc-cardholder-name'>";
+            $html .= "<label for='payarc-cardholder-name-{$form_id}' class='gform-field-label'>" . $cardholder_name_sub_label . "</label>";
+            $html .= "<input type='text' name='input_{$id}.5' id='payarc-cardholder-name-{$form_id}' ";
+            $html .= "class='gform-theme-field-control payarc-card-field payarc-cardholder-name' ";
+            $html .= "value='{$cardholder_name}'{$cardholder_name_placeholder}>";
+            $html .= "</div>";
+        }
+        
+        $html .= "</div>";
+        $html .= "</div>";
         
         $html .= "<div id='payarc-card-errors-{$form_id}' class='gfield_description validation_message gform-field-description--validation-error' style='display:none;'></div>";
         $html .= "</div>";
@@ -303,19 +318,46 @@ class GF_Field_PayArc_CreditCard extends GF_Field {
      */
     public function validate($value, $form) {
         
+        $this->log_debug(__METHOD__ . '(): PayArc field validation starting - field ID: ' . $this->id);
+        
         // Skip validation if field is hidden by conditional logic
         if (RGFormsModel::is_field_hidden($form, $this, array())) {
+            $this->log_debug(__METHOD__ . '(): Field is hidden by conditional logic - skipping validation');
             return;
         }
         
-        // Check if payment token exists (will be added by JavaScript)
+        // Check if we have direct card data or payment token
         $payment_token = rgpost('payarc_payment_token');
+        $card_number = rgpost('payarc_card_number');
         
-        if (empty($payment_token)) {
+        if (empty($payment_token) && empty($card_number)) {
+            error_log('PayArc validation failing - no payment token or card number');
+            $this->log_debug(__METHOD__ . '(): Validation failing: No payment token or card number found');
+            $this->log_debug(__METHOD__ . '(): Payment token: ' . ($payment_token ?: 'empty'));
+            $this->log_debug(__METHOD__ . '(): Card number: ' . ($card_number ? 'present' : 'empty'));
             $this->failed_validation = true;
             $this->validation_message = empty($this->errorMessage) 
                 ? esc_html__('נדרש מידע תשלום.', 'gravityformspayarc')
                 : $this->errorMessage;
+        } else {
+            $this->log_debug(__METHOD__ . '(): Validation passed - payment data found');
+        }
+        
+        // If we have direct card data, validate it
+        if (!empty($card_number)) {
+            $card_expiry = rgpost('payarc_card_expiry');
+            $card_cvc = rgpost('payarc_card_cvc');
+            
+            if (empty($card_number) || strlen(str_replace(' ', '', $card_number)) < 13) {
+                $this->failed_validation = true;
+                $this->validation_message = esc_html__('מספר כרטיס אשראי לא תקין', 'gravityformspayarc');
+            } elseif (empty($card_expiry)) {
+                $this->failed_validation = true;
+                $this->validation_message = esc_html__('נדרש תאריך תפוגה', 'gravityformspayarc');
+            } elseif (empty($card_cvc) || strlen($card_cvc) < 3) {
+                $this->failed_validation = true;
+                $this->validation_message = esc_html__('CVV לא תקין', 'gravityformspayarc');
+            }
         }
     }
     
