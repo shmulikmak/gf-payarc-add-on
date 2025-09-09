@@ -1,0 +1,163 @@
+/**
+ * PayArc for Gravity Forms - Admin Styles
+ * Styles for admin functionality including refunds
+ */
+
+/* PayArc Refund Container */
+#payarc-refund-container {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+#payarc-refund-container h4 {
+    margin: 0 0 12px 0;
+    color: #333;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* PayArc Refund Button */
+#payarc-refund-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    line-height: 1.4;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 3px;
+    color: #2c3338;
+    text-decoration: none;
+    transition: all 0.1s ease-in-out;
+}
+
+#payarc-refund-button:hover {
+    background: #f6f7f7;
+    border-color: #8c8f94;
+    color: #1d2327;
+}
+
+#payarc-refund-button:active {
+    background: #f0f0f1;
+    border-color: #8c8f94;
+}
+
+#payarc-refund-button:disabled {
+    color: #a7aaad !important;
+    border-color: #dcdcde !important;
+    background: #f6f7f7 !important;
+    cursor: not-allowed;
+}
+
+#payarc-refund-button .dashicons {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+/* PayArc Admin Messages */
+#payarc-refund-message .notice {
+    margin: 0;
+    padding: 8px 12px;
+}
+
+#payarc-refund-message .notice p {
+    margin: 0;
+    font-size: 13px;
+}
+
+/* Success state */
+.payarc-refund-success #payarc-refund-container {
+    background: #f0f6fc;
+    border-color: #c3ddfd;
+}
+
+.payarc-refund-success h4 {
+    color: #0a4b78;
+}
+
+/* Entry Detail PayArc Section */
+.payarc-entry-detail-section {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+.payarc-entry-detail-section h4 {
+    background: #f0f0f1;
+    border-bottom: 1px solid #c3c4c7;
+    margin: 0;
+    padding: 12px 15px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.payarc-entry-detail-content {
+    padding: 15px;
+}
+
+/* PayArc Status Badges */
+.payarc-status {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.payarc-status--paid {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.payarc-status--refunded {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.payarc-status--processing {
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* Responsive Design */
+@media (max-width: 782px) {
+    #payarc-refund-container {
+        padding: 12px;
+        margin-top: 12px;
+    }
+    
+    #payarc-refund-button {
+        padding: 10px 14px;
+        font-size: 14px;
+    }
+    
+    #payarc-refund-button .dashicons {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* Loading state improvements */
+#payarc-refund-spinner.spinner.is-active {
+    float: none;
+    margin: 0 0 0 8px;
+}
+
+/* RTL Support for Hebrew text */
+[dir="rtl"] #payarc-refund-container {
+    text-align: right;
+}
+
+[dir="rtl"] #payarc-refund-button {
+    flex-direction: row-reverse;
+}
